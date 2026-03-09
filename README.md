@@ -1,3 +1,5 @@
+# 대시보드 바로가기: https://y3osemite.github.io/KR_Market_Signal_Dashboard/
+
 # 📊 매수 시점 신호등 (Market Signal Dashboard)
 
 > 한국 주식 매수 타이밍을 판단하기 위한 3가지 핵심 지표 모니터링 대시보드
