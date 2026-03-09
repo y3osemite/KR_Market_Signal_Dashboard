@@ -1,4 +1,5 @@
 # 대시보드 바로가기: https://y3osemite.github.io/KR_Market_Signal_Dashboard/
+---
 
 # 📊 매수 시점 신호등 (Market Signal Dashboard)
 
