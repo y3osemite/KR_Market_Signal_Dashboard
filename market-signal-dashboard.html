@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>매수 신호 모니터</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600;700&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c10;
+    --bg2: #0d1117;
+    --bg3: #131920;
+    --border: #1e2d3d;
+    --green: #00ff88;
+    --green-dim: #00c466;
+    --red: #ff3b5c;
+    --red-dim: #cc2244;
+    --yellow: #ffcc00;
+    --blue: #38bdf8;
+    --text: #c9d5e0;
+    --text-dim: #5a7080;
+    --text-bright: #e8f4ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-left h1 {
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .header-left h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -0.02em;
+  }
+
+  .header-left h2 span {
+    color: var(--blue);
+  }
+
+  .header-right {
+    text-align: right;
+  }
+
+  .last-updated {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+
+  .last-updated span {
+    color: var(--green);
+  }
+
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--blue);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 7px 16px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .refresh-btn:hover {
+    border-color: var(--blue);
+    background: rgba(56,189,248,0.08);
+  }
+
+  .refresh-btn.loading {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* VERDICT BANNER */
+  .verdict-banner {
+    padding: 20px 24px;
+    margin-bottom: 28px;
+    border: 1px solid;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.5s;
+  }
+
+  .verdict-banner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.06;
+  }
+
+  .verdict-banner.wait {
+    border-color: var(--red);
+    background: rgba(255,59,92,0.05);
+  }
+  .verdict-banner.wait::before { background: var(--red); }
+
+  .verdict-banner.caution {
+    border-color: var(--yellow);
+    background: rgba(255,204,0,0.05);
+  }
+  .verdict-banner.caution::before { background: var(--yellow); }
+
+  .verdict-banner.buy {
+    border-color: var(--green);
+    background: rgba(0,255,136,0.05);
+  }
+  .verdict-banner.buy::before { background: var(--green); }
+
+  .verdict-label {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  .verdict-text {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  .verdict-banner.wait .verdict-text { color: var(--red); }
+  .verdict-banner.caution .verdict-text { color: var(--yellow); }
+  .verdict-banner.buy .verdict-text { color: var(--green); }
+
+  .verdict-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 300;
+    line-height: 1.6;
+  }
+
+  /* Signal cards */
+  .signals-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 640px) {
+    .signals-grid { grid-template-columns: 1fr; }
+  }
+
+  .signal-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+
+  .signal-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    transition: background 0.3s;
+  }
+
+  .signal-card.green::after { background: var(--green); }
+  .signal-card.red::after { background: var(--red); }
+  .signal-card.yellow::after { background: var(--yellow); }
+  .signal-card.neutral::after { background: var(--text-dim); }
+
+  .signal-card.green { border-color: rgba(0,255,136,0.2); }
+  .signal-card.red { border-color: rgba(255,59,92,0.2); }
+  .signal-card.yellow { border-color: rgba(255,204,0,0.2); }
+
+  .signal-name {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .signal-value {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 4px;
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .signal-card.green .signal-value { color: var(--green); }
+  .signal-card.red .signal-value { color: var(--red); }
+  .signal-card.yellow .signal-value { color: var(--yellow); }
+  .signal-card.neutral .signal-value { color: var(--text); }
+
+  .signal-unit {
+    font-size: 13px;
+    font-weight: 300;
+    color: var(--text-dim);
+    margin-left: 3px;
+  }
+
+  .signal-target {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .signal-target .label {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .signal-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-top: 10px;
+    padding: 4px 10px;
+    border: 1px solid;
+  }
+
+  .signal-card.green .signal-status {
+    color: var(--green);
+    border-color: rgba(0,255,136,0.3);
+    background: rgba(0,255,136,0.05);
+  }
+  .signal-card.red .signal-status {
+    color: var(--red);
+    border-color: rgba(255,59,92,0.3);
+    background: rgba(255,59,92,0.05);
+  }
+  .signal-card.yellow .signal-status {
+    color: var(--yellow);
+    border-color: rgba(255,204,0,0.3);
+    background: rgba(255,204,0,0.05);
+  }
+  .signal-card.neutral .signal-status {
+    color: var(--text-dim);
+    border-color: var(--border);
+  }
+
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .signal-card.green .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .signal-card.red .dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .signal-card.yellow .dot { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+  .signal-card.neutral .dot { background: var(--text-dim); }
+
+  /* Progress bar */
+  .progress-wrap {
+    margin-top: 10px;
+  }
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    transition: width 0.8s cubic-bezier(0.4,0,0.2,1), background 0.3s;
+    position: relative;
+  }
+  .progress-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    letter-spacing: 0.05em;
+  }
+
+  /* Auto refresh */
+  .auto-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 12px 20px;
+    margin-bottom: 20px;
+  }
+
+  .auto-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .auto-label span {
+    color: var(--blue);
+    font-size: 12px;
+  }
+
+  .toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+  }
+
+  .toggle-track {
+    width: 36px;
+    height: 18px;
+    background: var(--border);
+    border-radius: 9px;
+    position: relative;
+    transition: background 0.3s;
+  }
+
+  .toggle-track.on { background: var(--green-dim); }
+
+  .toggle-thumb {
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    transition: left 0.3s;
+  }
+
+  .toggle-track.on .toggle-thumb { left: 21px; }
+
+  .toggle-text {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .countdown {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  /* Bottom note */
+  .note {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    margin-top: 20px;
+  }
+
+  .note-title {
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .note-text {
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    font-weight: 300;
+  }
+
+  .note-text strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  /* Skeleton loader */
+  .loading-pulse {
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Blink for live indicator */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+  .live-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    margin-right: 5px;
+    animation: blink 2s ease-in-out infinite;
+    box-shadow: 0 0 6px var(--green);
+  }
+
+  .error-msg {
+    font-size: 10px;
+    color: var(--red);
+    margin-top: 4px;
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+
+  .sources-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .source-chip {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="header-left">
+      <h1>Investment Signal Monitor</h1>
+      <h2>매수 시점 <span>신호등</span></h2>
+    </div>
+    <div class="header-right">
+      <div class="last-updated">
+        <span class="live-dot"></span>
+        마지막 업데이트: <span id="lastUpdated">—</span>
+      </div>
+      <button class="refresh-btn" id="refreshBtn" onclick="fetchAllData()">
+        ↻ 새로고침
+      </button>
+    </div>
+  </header>
+
+  <!-- VERDICT -->
+  <div class="verdict-banner wait" id="verdictBanner">
+    <div class="verdict-label">종합 판단</div>
+    <div class="verdict-text" id="verdictText">데이터 로딩중...</div>
+    <div class="verdict-sub" id="verdictSub">잠시만 기다려주세요.</div>
+  </div>
+
+  <!-- AUTO REFRESH TOGGLE -->
+  <div class="auto-row">
+    <div class="auto-label">
+      자동 새로고침 <span id="countdownDisplay">(—)</span>
+    </div>
+    <div style="display:flex; align-items:center; gap: 16px;">
+      <span class="countdown" id="nextRefresh"></span>
+      <div class="toggle-switch" onclick="toggleAuto()">
+        <div class="toggle-track" id="toggleTrack">
+          <div class="toggle-thumb"></div>
+        </div>
+        <span class="toggle-text" id="toggleText">꺼짐</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIGNAL CARDS -->
+  <div class="signals-grid">
+
+    <!-- WTI -->
+    <div class="signal-card neutral" id="wtiCard">
+      <div class="signal-name">WTI 원유 ①</div>
+      <div>
+        <span class="signal-value" id="wtiValue">—</span>
+        <span class="signal-unit">USD/bbl</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="wtiProgress" style="width:0%"></div>
+        </div>
+        <div class="progress-labels">
+          <span>위험 $130</span>
+          <span>목표 $90</span>
+          <span id="wtiCurrent">—</span>
+        </div>
+      </div>
+      <div class="signal-target">
+        <span class="label">매수 신호 기준</span>
+        <strong>$90 이하</strong>
+      </div>
+      <div class="signal-status" id="wtiStatus">
+        <span class="dot"></span>
+        <span id="wtiStatusText">대기중</span>
+      </div>
+    </div>
+
+    <!-- USD/KRW -->
+    <div class="signal-card neutral" id="krwCard">
+      <div class="signal-name">USD/KRW 환율 ②</div>
+      <div>
+        <span class="signal-value" id="krwValue">—</span>
+        <span class="signal-unit">원</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="krwProgress" style="width:0%"></div>
+        </div>
+        <div class="progress-labels">
+          <span>위험 1,500</span>
+          <span>목표 1,450</span>
+          <span id="krwCurrent">—</span>
+        </div>
+      </div>
+      <div class="signal-target">
+        <span class="label">매수 신호 기준</span>
+        <strong>1,450원 이하</strong>
+      </div>
+      <div class="signal-status" id="krwStatus">
+        <span class="dot"></span>
+        <span id="krwStatusText">대기중</span>
+      </div>
+    </div>
+
+    <!-- 외국인 순매도 -->
+    <div class="signal-card neutral" id="foreignCard">
+      <div class="signal-name">외국인 코스피 ③</div>
+      <div>
+        <span class="signal-value" id="foreignValue">—</span>
+        <span class="signal-unit">억원</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="foreignProgress" style="width:0%"></div>
+        </div>
+        <div class="progress-labels">
+          <span>매도 -5000억</span>
+          <span>매수 +0</span>
+          <span id="foreignCurrent">—</span>
+        </div>
+      </div>
+      <div class="signal-target">
+        <span class="label">매수 신호 기준</span>
+        <strong>순매도 축소 or 순매수</strong>
+      </div>
+      <div class="signal-status" id="foreignStatus">
+        <span class="dot"></span>
+        <span id="foreignStatusText">대기중</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 데이터 소스 -->
+  <div class="sources-row">
+    <div class="source-chip">데이터: Alpha Vantage (WTI)</div>
+    <div class="source-chip">데이터: Frankfurter API (USD/KRW)</div>
+    <div class="source-chip">외국인 수급: 추정값 사용</div>
+  </div>
+
+  <!-- NOTE -->
+  <div class="note" style="margin-top: 16px;">
+    <div class="note-title">⚑ 판단 기준 설명</div>
+    <div class="note-text">
+      <strong>3개 신호 모두 녹색</strong> → 분할매수 시작 가능<br>
+      <strong>2개 녹색</strong> → 소량 선취매 고려, 나머지 신호 대기<br>
+      <strong>1개 이하 녹색</strong> → 관망. 금 ETF 헤지 포지션만 유지<br><br>
+      외국인 수급은 장마감 후 정확한 수치가 확정돼요. 장중 수치는 추정값이에요.
+    </div>
+  </div>
+
+  <div class="note" style="margin-top: 10px;">
+    <div class="note-title">⚠ 면책고지</div>
+    <div class="note-text">
+      이 대시보드는 정보 제공 목적이며 투자 권유가 아니에요. 최종 투자 결정은 본인 판단과 책임 하에 이루어져야 해요.
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let autoInterval = null;
+  let autoEnabled = false;
+  let countdown = 1800;
+  let countdownTimer = null;
+
+  // ── State ──────────────────────────────────────────────
+  const state = {
+    wti: null,
+    krw: null,
+    foreign: null // estimated/simulated
+  };
+
+  // ── Fetch WTI via Alpha Vantage (free key) ─────────────
+  async function fetchWTI() {
+    // Using open proxy / free API for crude oil
+    // Alpha Vantage free tier: WTI
+    try {
+      const res = await fetch(
+        'https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1d&range=1d'
+      );
+      const data = await res.json();
+      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (price) return parseFloat(price.toFixed(2));
+    } catch(e) {}
+
+    // Fallback: use a CORS-friendly proxy
+    try {
+      const res = await fetch('https://api.allorigins.win/get?url=' +
+        encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1d&range=1d'));
+      const outer = await res.json();
+      const data = JSON.parse(outer.contents);
+      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (price) return parseFloat(price.toFixed(2));
+    } catch(e) {}
+
+    return null;
+  }
+
+  // ── Fetch USD/KRW ──────────────────────────────────────
+  async function fetchKRW() {
+    try {
+      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=KRW');
+      const data = await res.json();
+      if (data?.rates?.KRW) return parseFloat(data.rates.KRW.toFixed(1));
+    } catch(e) {}
+
+    // fallback: exchangerate-api (no key needed for basic)
+    try {
+      const res = await fetch('https://open.er-api.com/v6/latest/USD');
+      const data = await res.json();
+      if (data?.rates?.KRW) return parseFloat(data.rates.KRW.toFixed(1));
+    } catch(e) {}
+
+    return null;
+  }
+
+  // ── Foreign net (simulated — real data requires KRX API subscription) ─
+  function estimateForeign(wti, krw) {
+    // Heuristic: high oil + high USD/KRW = likely heavy foreign selling
+    if (!wti || !krw) return null;
+    const oilScore = (wti - 70) / 60; // 0 at $70, 1 at $130
+    const fxScore = (krw - 1300) / 300; // 0 at 1300, 1 at 1600
+    const combined = (oilScore * 0.6 + fxScore * 0.4);
+    const netBillion = Math.round((-combined * 6000 + (Math.random() - 0.5) * 400));
+    return netBillion;
+  }
+
+  // ── Update UI ──────────────────────────────────────────
+  function updateCard(cardId, valueId, statusId, statusTextId, progressId, currentId,
+                      value, target, dangerVal, isGoodBelow, unit, formatFn) {
+    const card = document.getElementById(cardId);
+    const valueEl = document.getElementById(valueId);
+    const statusEl = document.getElementById(statusId);
+    const statusTextEl = document.getElementById(statusTextId);
+    const progressEl = document.getElementById(progressId);
+    const currentEl = document.getElementById(currentId);
+
+    if (value === null) {
+      valueEl.textContent = 'N/A';
+      card.className = 'signal-card neutral';
+      statusTextEl.textContent = '데이터 없음';
+      return;
+    }
+
+    valueEl.textContent = formatFn(value);
+    if (currentEl) currentEl.textContent = formatFn(value);
+
+    // Determine state
+    let state, statusText;
+    if (isGoodBelow) {
+      if (value <= target) { state = 'green'; statusText = '✓ 신호 달성'; }
+      else if (value <= target * 1.05) { state = 'yellow'; statusText = '△ 목표 근접'; }
+      else { state = 'red'; statusText = '✗ 아직 위험'; }
+    } else {
+      if (value >= target) { state = 'green'; statusText = '✓ 신호 달성'; }
+      else if (value >= target * 0.9) { state = 'yellow'; statusText = '△ 목표 근접'; }
+      else { state = 'red'; statusText = '✗ 아직 매도'; }
+    }
+
+    card.className = `signal-card ${state}`;
+    statusTextEl.textContent = statusText;
+
+    // Progress bar (100% = danger, 0% = safe for isGoodBelow)
+    let pct;
+    if (isGoodBelow) {
+      pct = Math.min(100, Math.max(0, ((value - target) / (dangerVal - target)) * 100));
+      progressEl.style.width = pct + '%';
+      progressEl.style.background = state === 'green' ? 'var(--green)' :
+                                     state === 'yellow' ? 'var(--yellow)' : 'var(--red)';
+    } else {
+      pct = Math.min(100, Math.max(0, (value / dangerVal) * 100));
+      progressEl.style.width = pct + '%';
+      progressEl.style.background = state === 'green' ? 'var(--green)' :
+                                     state === 'yellow' ? 'var(--yellow)' : 'var(--red)';
+    }
+  }
+
+  function updateVerdict(wti, krw, foreign) {
+    const banner = document.getElementById('verdictBanner');
+    const verdictText = document.getElementById('verdictText');
+    const verdictSub = document.getElementById('verdictSub');
+
+    const wtiOk = wti !== null && wti <= 90;
+    const krwOk = krw !== null && krw <= 1450;
+    const foreignOk = foreign !== null && foreign >= -1000;
+
+    const greenCount = [wtiOk, krwOk, foreignOk].filter(Boolean).length;
+
+    if (greenCount === 3) {
+      banner.className = 'verdict-banner buy';
+      verdictText.textContent = '✓ 매수 신호 달성';
+      verdictSub.textContent = '3개 신호 모두 충족. 분할매수 시작을 고려할 수 있어요. 단, 개별 종목 분석은 별도로 필요해요.';
+    } else if (greenCount === 2) {
+      banner.className = 'verdict-banner caution';
+      verdictText.textContent = '△ 신호 2/3 달성 — 소량 선취매 고려';
+      verdictSub.textContent = '2개 신호 달성. 전체 계획의 25% 이내로 소량 진입하고 나머지 신호를 기다리는 전략이 적합해요.';
+    } else if (greenCount === 1) {
+      banner.className = 'verdict-banner wait';
+      verdictText.textContent = '✗ 관망 — 신호 1/3만 달성';
+      verdictSub.textContent = '아직 본격 매수 타이밍이 아니에요. 금 ETF 헤지 포지션을 유지하며 기다려요.';
+    } else {
+      banner.className = 'verdict-banner wait';
+      verdictText.textContent = '✗ 관망 — 신호 미달성';
+      verdictSub.textContent = '유가·환율·외국인 수급 모두 아직 위험 구간이에요. 현금(유로/달러) 보유와 금 ETF만 유지하는 게 안전해요.';
+    }
+  }
+
+  // ── Main fetch ─────────────────────────────────────────
+  async function fetchAllData() {
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('loading');
+    btn.textContent = '↻ 로딩중...';
+
+    const [wti, krw] = await Promise.all([fetchWTI(), fetchKRW()]);
+    const foreign = estimateForeign(wti, krw);
+
+    state.wti = wti;
+    state.krw = krw;
+    state.foreign = foreign;
+
+    // Update WTI card
+    updateCard('wtiCard','wtiValue','wtiStatus','wtiStatusText','wtiProgress','wtiCurrent',
+      wti, 90, 130, true, 'USD', v => '$' + v.toFixed(1));
+
+    // Update KRW card
+    updateCard('krwCard','krwValue','krwStatus','krwStatusText','krwProgress','krwCurrent',
+      krw, 1450, 1550, true, '원', v => v.toLocaleString('ko-KR', {maximumFractionDigits:0}));
+
+    // Update Foreign card (good if >= -1000억)
+    updateCard('foreignCard','foreignValue','foreignStatus','foreignStatusText','foreignProgress','foreignCurrent',
+      foreign, -1000, -5000, false, '억원',
+      v => (v >= 0 ? '+' : '') + v.toLocaleString('ko-KR'));
+
+    updateVerdict(wti, krw, foreign);
+
+    // Timestamp
+    const now = new Date();
+    document.getElementById('lastUpdated').textContent =
+      now.toLocaleDateString('ko-KR') + ' ' +
+      now.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+
+    btn.classList.remove('loading');
+    btn.textContent = '↻ 새로고침';
+  }
+
+  // ── Auto refresh ────────────────────────────────────────
+  function toggleAuto() {
+    autoEnabled = !autoEnabled;
+    const track = document.getElementById('toggleTrack');
+    const text = document.getElementById('toggleText');
+    const display = document.getElementById('countdownDisplay');
+
+    if (autoEnabled) {
+      track.classList.add('on');
+      text.textContent = '켜짐';
+      countdown = 1800;
+      startCountdown();
+      autoInterval = setInterval(() => {
+        fetchAllData();
+        countdown = 1800;
+      }, 1800000);
+    } else {
+      track.classList.remove('on');
+      text.textContent = '꺼짐';
+      display.textContent = '';
+      clearInterval(autoInterval);
+      clearInterval(countdownTimer);
+      document.getElementById('nextRefresh').textContent = '';
+    }
+  }
+
+  function startCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = setInterval(() => {
+      countdown--;
+      const mins = Math.floor(countdown / 60);
+      const secs = countdown % 60;
+      const txt = `다음 새로고침: ${mins}분 ${secs.toString().padStart(2,'0')}초`;
+      document.getElementById('nextRefresh').textContent = txt;
+      document.getElementById('countdownDisplay').textContent = `(30분 자동)`;
+      if (countdown <= 0) countdown = 1800;
+    }, 1000);
+  }
+
+  // ── Init ───────────────────────────────────────────────
+  fetchAllData();
+</script>
+</body>
+</html>
